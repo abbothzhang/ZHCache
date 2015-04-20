@@ -151,10 +151,6 @@ static NSString *const ISDiskCacheException = @"ISDiskCacheException";
 {
 //    dispatch_semaphore_wait(self.semaphore, DISPATCH_TIME_FOREVER);
     
-    NSString *yetCachedKey = [_key_yetCachedKeyDic objectForKey:key];
-    if (yetCachedKey) {
-        key = yetCachedKey;
-    }
     NSString *path = [self filePathForKey:key];
     BOOL hasObject = [[NSFileManager defaultManager] fileExistsAtPath:path isDirectory:NULL];
 //    dispatch_semaphore_signal(self.semaphore);
@@ -164,7 +160,7 @@ static NSString *const ISDiskCacheException = @"ISDiskCacheException";
 - (id)objectForKey:(NSString *)key
 {
    //test
-    [self calculateCurrentSize];
+//    [self calculateCurrentSize];
     
     NSString *yetCachedKey = [self.key_yetCachedKeyDic objectForKey:key];
     if (yetCachedKey) {
@@ -206,11 +202,7 @@ static NSString *const ISDiskCacheException = @"ISDiskCacheException";
 - (void)cacheObject:(NSData*)data forKey:(NSString *)key
 {
     //test
-    [self calculateCurrentSize];
-    
-    if ([self hasObjectForKey:key]) {
-        return;
-    }
+//    [self calculateCurrentSize];
 
     dispatch_semaphore_wait(self.semaphore, DISPATCH_TIME_FOREVER);
 //    //如果本地已经有object，则不重复缓存，用object的md5做标识
@@ -218,11 +210,10 @@ static NSString *const ISDiskCacheException = @"ISDiskCacheException";
     NSString *yetCachedKey = [self.dataMD5_yetCachedKeyDic objectForKey:md5];
     //如果yetCachedKey且文件确实存在，那么object已经存储不再进行缓存，将key对应的缓存路径指向已经存在的object
     if (yetCachedKey && [self hasObjectForKey:yetCachedKey]) {
-        if (![self.key_yetCachedKeyDic objectForKey:key]) {
-            [_key_yetCachedKeyDic setObject:yetCachedKey forKey:key];
-            NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-            [defaults setValue:_key_yetCachedKeyDic forKey:TBMIRROR_USERDEFAULT_KEY_YETCACHEDKEY_DIC];
-        }
+
+        [self.key_yetCachedKeyDic setObject:yetCachedKey forKey:key];
+        [_defaults setValue:_key_yetCachedKeyDic forKey:TBMIRROR_USERDEFAULT_KEY_YETCACHEDKEY_DIC];
+        
         dispatch_semaphore_signal(self.semaphore);
         return;
     }
@@ -384,27 +375,43 @@ static NSString *const ISDiskCacheException = @"ISDiskCacheException";
 
 //删除一半文件(不常用的那一半文件)
 -(void)removeOldObjects{
+    dispatch_semaphore_wait(self.semaphore, DISPATCH_TIME_FOREVER);
     //dataMD5按照引用数进行排序,排完序后key值会根据引用数进行升序排列
     [self.dataMD5_RetainCountDic keysSortedByValueUsingComparator:^NSComparisonResult(id obj1, id obj2) {
         if ([obj1 integerValue] > [obj2 integerValue]) {
-            return (NSComparisonResult)NSOrderedDescending;
+            return (NSComparisonResult)NSOrderedAscending;
         }
         if ([obj1 integerValue] < [obj2 integerValue]) {
-            return (NSComparisonResult)NSOrderedAscending;
+            return (NSComparisonResult)NSOrderedDescending;
         }
         return (NSComparisonResult)NSOrderedSame;
     }];
     
-    NSArray *dataMD5Array = [_dataMD5_RetainCountDic allKeys];
+    NSArray *key_yetCachedKeyDicKeys = [self.key_yetCachedKeyDic allKeys];
     
+    NSArray *dataMD5Array = [self.dataMD5_RetainCountDic allKeys];
     NSMutableArray *filePathArray = [[NSMutableArray alloc] initWithCapacity:dataMD5Array.count/2];
-    for (int i = 0; i < dataMD5Array.count/2; i++) {
-        NSString *key = [self.dataMD5_yetCachedKeyDic objectForKey:[dataMD5Array objectAtIndex:i]];
-        NSString *filePath = [self filePathForKey:key];
+    for (NSUInteger i = dataMD5Array.count-1; i > dataMD5Array.count/2-1; i--) {
+        NSString *yetCachedKey = [self.dataMD5_yetCachedKeyDic objectForKey:[dataMD5Array objectAtIndex:i]];
+        NSString *filePath = [self filePathForKey:yetCachedKey];
         [filePathArray addObject:filePath];
         //清理defaults中缓存的值todomark
+//        self.dataMD5_yetCachedKeyDic removeObjectForKey:
+        //删除key_yetCachedKeyDic中的值
+        for (NSString *key in key_yetCachedKeyDicKeys) {
+            if ([[self.key_yetCachedKeyDic objectForKey:key] isEqualToString:yetCachedKey]) {
+                [_key_yetCachedKeyDic removeObjectForKey:key];
+                [_defaults setValue:_key_yetCachedKeyDic forKey:TBMIRROR_USERDEFAULT_KEY_YETCACHEDKEY_DIC];
+            }
+        }
         
+        [self.dataMD5_yetCachedKeyDic removeObjectForKey:[dataMD5Array objectAtIndex:i]];
+        [self.dataMD5_RetainCountDic removeObjectForKey:[dataMD5Array objectAtIndex:i]];
+        [_defaults setValue:_dataMD5_yetCachedKeyDic forKey:TBMIRROR_USERDEFAULT_DATA_YETCACHEDKEY_DIC];
+        [_defaults setValue:_dataMD5_RetainCountDic forKey:TBMIRROR_USERDEFAULT_DATA_RETAINCOUNT_DIC];
     }
+    
+    dispatch_semaphore_signal(self.semaphore);
     
     [self removeObjectsUsingBlock:^BOOL(NSString *filePath) {
         return [filePathArray containsObject:filePath];
