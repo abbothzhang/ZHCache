@@ -114,6 +114,11 @@ static NSString *const ISDiskCacheException = @"ISDiskCacheException";
 //用keyMD5加密后的字符串作为文件名，给出文件路径
 - (NSString *)filePathForKey:(NSString *)key
 {
+    NSString *yetCachedKey = [_key_yetCachedKeyDic objectForKey:key];
+    if (yetCachedKey) {
+        key = yetCachedKey;
+    }
+    
     NSData *data = [NSKeyedArchiver archivedDataWithRootObject:key];
     if ([data length] == 0) {
         return nil;
@@ -162,10 +167,6 @@ static NSString *const ISDiskCacheException = @"ISDiskCacheException";
    //test
 //    [self calculateCurrentSize];
     
-    NSString *yetCachedKey = [self.key_yetCachedKeyDic objectForKey:key];
-    if (yetCachedKey) {
-        key = yetCachedKey;//重定向到之前有缓存的key
-    }
     
     if (![self hasObjectForKey:key]) {
         return nil;
@@ -203,6 +204,10 @@ static NSString *const ISDiskCacheException = @"ISDiskCacheException";
 {
     //test
 //    [self calculateCurrentSize];
+    
+    if ([self hasObjectForKey:key]) {
+        return;
+    }
 
     dispatch_semaphore_wait(self.semaphore, DISPATCH_TIME_FOREVER);
 //    //如果本地已经有object，则不重复缓存，用object的md5做标识
